@@ -37,6 +37,7 @@ export interface Config {
   singleTalkWaiting: number;
   singleClear: number;
   singleMaxMessages: number;
+  enableReread: boolean;
 }
 
 export const Config: Schema<Config> = Schema.object({
@@ -124,6 +125,7 @@ export const Config: Schema<Config> = Schema.object({
   singleMaxMessages: Schema.number()
     .description("私聊时历史消息上限")
     .default(40),
+  enableReread: Schema.boolean().default(false).description("是否启用复读"),
 });
 
 let receive = {};
@@ -221,14 +223,14 @@ export function apply(ctx: Context, config: Config) {
         singleAsk[session.userId] = true;
       }
       console.log(
-        `${formattedDateTime()} Bot在群聊${session.channelId}被${
-          session.author.user.name
-        }(${session.userId})提及：${session.content}`
+        `${formattedDateTime()} Bot在群聊${session.channelId}被${session.author.user.name}(${session.userId})提及：${session.content}`
       );
+
       if (singleAsk[session.userId] == false) {
-        console.log(`${formattedDateTime()} Bot拒绝回答，因为此人还在冷却期间`);
+        console.log(`${formattedDateTime()} Bot拒绝回答，因为此人还在冷却期间`); 
         return;
       }
+
       historyMessages[session.channelId].push(
         SerializeMessage(session.author.user.name, session.content)
       );
@@ -237,6 +239,7 @@ export function apply(ctx: Context, config: Config) {
         apiGPT,
         prompt
       );
+      
       let reply = tmp_return["reply"];
       let emoji = tmp_return["emoji"];
       console.log(
@@ -249,7 +252,9 @@ export function apply(ctx: Context, config: Config) {
       historyMessages[session.channelId].push(
         SerializeMessage(config.nickName, tmp_return["origin"])
       );
-      await sleep(config.singleAskSleep);
+
+      await sleep(config.singleAskSleep);//冷却
+
       singleAsk[session.userId] = true;
       return;
     }
@@ -317,6 +322,7 @@ export function apply(ctx: Context, config: Config) {
         }, config.singleClear);
       }
     }
+
     //检测队列及请求回复
     if (
       activeGroups.includes(session.channelId) &&
@@ -326,22 +332,22 @@ export function apply(ctx: Context, config: Config) {
       //消息添加及上报
       if (messageCount[session.channelId] >= config.maxGroupMessages) {
         console.log(
-          `${formattedDateTime()} 群聊${
-            session.channelId
-          }队列已满，移除最早消息`
-        );
+          `${formattedDateTime()} 群聊${session.channelId}队列已满，移除最早消息`);
+
         historyMessages[session.channelId].shift();
+
       }
       historyMessages[session.channelId].push(
         SerializeMessage(session.author.user.name, session.content)
       );
+
       messageCount[session.channelId]++;
-      console.log(`${formattedDateTime()} 群聊 ${
-        session.channelId
-      } 收到一条消息 ${session.content}
+
+      console.log(`${formattedDateTime()} 群聊 ${session.channelId} 收到一条消息 ${session.content}
         \n目前群聊${session.channelId}队列${
         messageCount[session.channelId]
       }/${messagesLength}`);
+
       //发送请求
       if (messageCount[session.channelId] >= messagesLength) {
         tmp_random[session.channelId] = Math.random();
